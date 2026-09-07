@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Arc-Style Pinned Tabs",
-  "version": "1.3.0",
-  "description": "Makes Command+W reset pinned tabs to their home URL instead of closing them.",
+  "version": "1.3.1",
+  "description": "Makes closing a pinned tab reset it to its home URL instead instead of closing them.",
   "permissions": [
     "contextMenus",
     "storage",

@@ -19,6 +19,20 @@ A tiny standalone Manifest V3 extension that makes pinned Chromium tabs behave m
 
 When clicked later, the pin loads its saved home URL.
 
+### Every other way of closing a pin
+
+Middle-clicking a pinned tab, or choosing **Close tab** from its context menu, reaches the same outcome by a different route. Chromium exposes no way to intercept those closes, because `tabs.onRemoved` fires after the fact and cannot be cancelled. So the extension re-creates the pin instead of preventing the close: same window, same strip position, loading its home URL, left in the background.
+
+Three consequences worth knowing:
+
+- **You see the tab close and reappear.** Chromium plays its close animation, then its open animation for the replacement. Neither can be cancelled from an extension, so the flicker is expected. `Command+W` has no such animation because it never closes the tab.
+- The restored pin is a **new tab**, so its back/forward history does not survive. Its home URL, strip position, and most-recently-used slot do.
+- There is no way to genuinely close a pinned tab while it is pinned. **Unpin it first**, then close it.
+
+Pins are not restored when their window closes, so quitting Helium behaves normally.
+
+Chromium reports closing a pinned tab as an unpin immediately followed by a removal, which is indistinguishable from a deliberate unpin except by timing. An unpin within 250 ms of the removal is treated as teardown and the pin is restored; anything slower is treated as your decision and the tab closes for good.
+
 ### Manually change a pin's home URL
 
 1. Navigate the pinned tab to the page you want as its new home.
@@ -87,15 +101,17 @@ The GitHub pin remains pinned, Helium returns to the previous eligible tab, and 
 - `chrome.tabs.onUpdated` captures a tab's URL when it becomes pinned.
 - A tab-strip context-menu command can replace a pin's saved home with its current URL.
 - Navigating inside a pin does not overwrite its home URL.
-- Unpinning removes the saved URL; pinning again captures a new one.
+- Unpinning drops the saved URL once the unpin is confirmed to be deliberate rather than part of a close; pinning again captures a new one.
 - `chrome.tabs.onActivated` maintains a separate MRU history for each window.
 - Reset pins are kept in a session-scoped exclusion set.
 - The extension marks its own tab activations, allowing a later user-driven activation to make an excluded pin eligible again.
 - Before closing a normal tab during a close sweep, it chooses an eligible handoff when necessary so Chromium does not fall back to an excluded pin.
-- Home URLs live in durable `chrome.storage.local`. Current tab associations, MRU histories, and close-sweep exclusions live in `chrome.storage.session`.
+- `chrome.tabs.onRemoved` re-creates a pin that was closed by any route other than `Command+W`, using a strip position recorded while the tab was still open.
+- Session state that survives worker suspension is pruned with one pass of grace, because a suspended worker is often woken by the very close it must react to.
+- Home URLs live in durable `chrome.storage.local`. Current tab associations, MRU histories, close-sweep exclusions, pinned strip positions, and unpin timestamps live in `chrome.storage.session`.
 - A URL reset is observed before discard is attempted, avoiding a Chromium race that could otherwise resurrect the old deep URL.
 
-The extension operates on the existing tab. It never unpins, moves, deletes, or recreates a pinned tab.
+`Command+W` operates on the existing tab and never unpins, moves, deletes, or recreates it. Every other close route cannot be intercepted at all, so the pin is re-created afterwards instead.
 
 ## Permissions and privacy
 
@@ -127,6 +143,8 @@ Set `DEBUG = true` at the top of `service-worker.js` for logs covering:
 - `Command+W` handling;
 - automatic handoffs and fallbacks;
 - close-sweep exclusion and restoration;
+- unpins held pending a possible removal;
+- pin re-creation after a close;
 - URL reset and discard success or failure.
 
 With Developer mode enabled, open the extension's **service worker** link on `helium://extensions` to view its console.
@@ -147,6 +165,11 @@ With Developer mode enabled, open the extension's **service worker** link on `he
 - [ ] Closing tabs removes stale MRU entries.
 - [ ] A sole pinned tab is preserved.
 - [ ] A discard failure does not break the URL reset.
+- [ ] Middle-clicking a pin restores it at the same strip position, on its home URL.
+- [ ] **Close tab** from a pin's context menu restores it the same way.
+- [ ] Unpinning a tab and then closing it leaves it closed.
+- [ ] Closing a window does not resurrect the pins it contained.
+- [ ] A pin closed after the service worker has gone idle is still restored.
 
 ## Limitations
 
@@ -156,3 +179,6 @@ With Developer mode enabled, open the extension's **service worker** link on `he
 - Chromium has no extension API for changing a discarded tab's pending URL without beginning navigation. The extension waits for the reset URL and then makes a best-effort discard attempt.
 - A pinned tab that is alone in its window must remain active and cannot be discarded.
 - Browser-internal or otherwise restricted URLs may reject `chrome.tabs.update`. Ordinary web URLs work without host permissions.
+- A pin closed by any route other than `Command+W` is restored, not preserved. It comes back as a new tab without the old one's navigation history, after a visible close-then-open animation that no extension API can suppress.
+- Telling a teardown unpin apart from a deliberate one rests on a 250 ms timing threshold rather than on anything Chromium states explicitly. A close whose internal unpin somehow lands outside that window would not be restored.
+- If Chromium terminates the service worker between the removal and the re-creation, the pin is gone and nothing recovers it.
