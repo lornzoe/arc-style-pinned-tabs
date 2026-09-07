@@ -2,6 +2,8 @@
 
 A tiny standalone Manifest V3 extension that makes pinned Chromium tabs behave more like Arc favorites.
 
+**This fork intends to bring its behaviour closer to function like Zen's Essential Tabs, for personal use.**
+
 ## Behavior
 
 ### Normal tabs
